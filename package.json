@@ -1,6 +1,6 @@
 {
   "name": "chess-lens",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Analyze your Lichess and Chess.com games with local Stockfish",
   "main": "main.js",
   "scripts": {

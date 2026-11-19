@@ -25,6 +25,8 @@ function evalText(w, mate) {
   const v = w / 100;
   return (v > 0 ? '+' : '') + v.toFixed(Math.abs(v) >= 10 ? 0 : 1);
 }
+// replaceChildren() prints null/undefined as text, so drop empty parts first.
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k != null && k !== false));
 const moveNum = (ply) => `${Math.ceil(ply / 2)}${ply % 2 ? '.' : '…'}`;
 
 // ---------- move tree ----------
@@ -110,7 +112,7 @@ export function reviewView() {
   };
   const playerRow = (el, color) => {
     const isMe = color === game.color;
-    el.replaceChildren(
+    fill(el,
       h('span.sd.' + color),
       h('span.pname', isMe ? game.me : game.opp),
       h('span.elo', (isMe ? game.myElo : game.oppElo) ?? ''),
@@ -358,14 +360,14 @@ export function reviewView() {
     if (!node.key) { info.replaceChildren(h('span.muted', 'Start position. Drag pieces to explore your own lines.')); return; }
     const label = h('b', `${moveNum(node.ply)} ${node.san}`);
     if (!node.main) {
-      info.replaceChildren(label, h('span.muted', ' Your line · '), h('button.link.small', { onclick: () => deleteFrom(node) }, 'delete from here'));
+      fill(info, label, h('span.muted', ' Your line · '), h('button.link.small', { onclick: () => deleteFrom(node) }, 'delete from here'));
     } else if (mvInfo?.cls) {
       const who = mvInfo.mover === game.color ? 'You' : game.opp;
-      info.replaceChildren(h('span.tag.' + mvInfo.cls, cap(mvInfo.cls)), ' ', label, h('span.muted', ` by ${who}, −${mvInfo.loss.toFixed(0)}% win chance.`),
+      fill(info, h('span.tag.' + mvInfo.cls, cap(mvInfo.cls)), ' ', label, h('span.muted', ` by ${who}, −${mvInfo.loss.toFixed(0)}% win chance.`),
         mvInfo.bestSan ? [' Best was ', h('b.best', mvInfo.bestSan), '.'] : null,
         mvInfo.clock != null ? h('span.muted', ` ${fmtClock(mvInfo.clock)} left`) : null);
     } else {
-      info.replaceChildren(label, mvInfo ? h('span.muted', mvInfo.bestSan ? ` Fine. Engine preferred ${mvInfo.bestSan}.` : ' Best move.') : null,
+      fill(info, label, mvInfo ? h('span.muted', mvInfo.bestSan ? ` Fine. Engine preferred ${mvInfo.bestSan}.` : ' Best move.') : null,
         mvInfo?.clock != null ? h('span.muted', ` ${fmtClock(mvInfo.clock)} left`) : null);
     }
   }

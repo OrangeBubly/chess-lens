@@ -131,7 +131,7 @@ export function patterns() {
       type: 'line',
       data: { datasets: [
         { label: 'Game accuracy', data: pts, showLine: false, backgroundColor: C.ink2, borderColor: C.ink2, pointRadius: 3, pointBackgroundColor: pts.map((p) => (p.g.result === 'win' ? C.win : p.g.result === 'loss' ? C.loss : C.draw)), pointBorderWidth: 0 },
-        { label: '10-game average', data: roll, borderColor: C.blue, borderWidth: 2, tension: 0.3 },
+        { label: '10-game average', data: roll, borderColor: C.blue, borderWidth: 2, cubicInterpolationMode: 'monotone', borderJoinStyle: 'round' },
       ] },
       options: {
         maintainAspectRatio: false,

@@ -131,6 +131,7 @@ function createWindow() {
 }
 
 // Dev-only: drives the UI with public test accounts and saves screenshots.
+const __shortId = (x) => String(x).slice(0, 12);
 async function selfTest(win) {
   const out = process.env.CL_SELFTEST;
   const js = (code) => win.webContents.executeJavaScript(code);
@@ -212,6 +213,16 @@ async function selfTest(win) {
   await js(`__review.nav('back'); __review.test.del()`); await wait(300);
   s = await st();
   check(s.varLines === 0 && s.main, `deleting the line removes it (varLines=${s.varLines})`);
+  // No stray "null" text in the info line / player rows, reviewed or not, with a comment
+  for (const gid of [id, await js(`__S.games.find(g => !__S.analysis[g.id] && g.moves.length > 30).id`)]) {
+    await js(`go('review', { reviewId: '${gid}' })`); await wait(400);
+    for (const k of ['start', 'fwd', 'fwd', 'fwd']) await js(`__review.nav('${k}')`);
+    await js(`__review.test.comment('my note')`); await wait(600);
+    const txt = await js(`[...document.querySelectorAll('.rv-info, .player, .movelist')].map(e => e.textContent).join(' | ')`);
+    check(!/null|undefined|\[object/.test(txt), `no null text (${__shortId(gid)}): ${txt.slice(0, 90)}`);
+    await js(`__review.test.comment('')`);
+  }
+  await js(`go('review', { reviewId: '${id}' })`); await wait(400);
   // Underpromotion through the move tree: 1.e4 d5 2.exd5 c6 3.dxc6 Nf6 4.cxb7 Nbd7 5.bxa8=N
   await js(`__review.nav('start')`);
   for (const u of ['e2e4', 'd7d5', 'e4d5', 'c7c6', 'd5c6', 'g8f6', 'c6b7', 'b8d7', 'b7a8n']) await js(`__review.test.play('${u}')`);
@@ -232,6 +243,7 @@ async function selfTest(win) {
   for (let i = 0; i < 8; i++) await js(`__review.nav('back')`);
   await js(`__review.test.del()`); await wait(200);
   check((await st()).varLines === 0, 'promotion test line cleaned up');
+  if (process.env.CL_QUICK) { console.log(fails ? `SELFTEST: ${fails} failure(s)` : 'SELFTEST: all checks passed'); app.exit(fails ? 1 : 0); return; }
   // Collapsed sidebar + smaller window
   await js(`document.querySelector('.collapse-btn').click()`);
   win.setSize(1180, 760);

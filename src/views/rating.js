@@ -2,7 +2,8 @@
 import { siteName, fmtDate } from '../data.js';
 import { h, chart, C, SERIES, openFullscreen } from '../ui.js';
 
-const ui = { gran: 'game', hidden: new Set() };
+const ui = { gran: 'game', hidden: new Set(), smooth: 1 };
+const SMOOTH_DAYS = [0, 2.5, 7]; // Gaussian sigma in days for Raw / Smooth / Smoother
 const fmtD = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
 const dayKey = (ts) => { const d = new Date(ts); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
 
@@ -18,14 +19,45 @@ function seriesFrom(combos) {
         return { ...p, x: d.getTime() };
       });
     }
-    const ys = gs.map((g) => g.myElo);
     const peakIdx = pts.reduce((b, p, j) => (p.y > pts[b].y ? j : b), 0);
+    pts = smooth(pts, SMOOTH_DAYS[ui.smooth] * 864e5);
+    const ys = gs.map((g) => g.myElo);
     return {
       key: k, label: `${siteName(site)} ${speed}`, color: SERIES[i], pts, peakIdx,
       current: ys[ys.length - 1], change: ys[ys.length - 1] - ys[0], peak: Math.max(...ys), low: Math.min(...ys),
       peakTs: gs[ys.indexOf(Math.max(...ys))].ts, n: gs.length,
     };
   });
+}
+
+// Gaussian smoothing over *time* (not game index): games come in bursts, so averaging
+// neighbouring games leaves a staircase, while a few-day window gives a clean trend.
+// The real rating stays in `r` for tooltips.
+function smooth(pts, sigma) {
+  const out = pts.map((p) => ({ ...p, r: p.y }));
+  if (!sigma || pts.length < 3) return out;
+  const reach = sigma * 3;
+  let lo = 0, hi = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const x = pts[i].x;
+    while (pts[lo].x < x - reach) lo++;
+    while (hi + 1 < pts.length && pts[hi + 1].x <= x + reach) hi++;
+    let sum = 0, tw = 0;
+    for (let j = lo; j <= hi; j++) {
+      const d = (pts[j].x - x) / sigma;
+      const wt = Math.exp(-0.5 * d * d);
+      sum += pts[j].y * wt; tw += wt;
+    }
+    out[i].y = sum / tw;
+  }
+  // Ease the tail toward the current rating by *time* distance from the last game, so the
+  // line ends where you are now without a vertical hook (games minutes apart get the same weight).
+  const last = out[out.length - 1];
+  for (const p of out) {
+    const w = Math.exp(-0.5 * ((last.x - p.x) / (sigma * 0.6)) ** 2);
+    p.y = p.y * (1 - w) + last.r * w;
+  }
+  return out;
 }
 
 // Vertical hover line.
@@ -52,7 +84,7 @@ function buildChart(cv, series, onZoom) {
     data: {
       datasets: visible.map((s) => ({
         label: s.label, data: s.pts, borderColor: s.color, borderWidth: 2,
-        tension: ui.gran === 'day' ? 0.3 : 0.1, cubicInterpolationMode: 'monotone',
+        cubicInterpolationMode: 'monotone', borderJoinStyle: 'round', borderCapStyle: 'round',
         pointRadius: (ctx) => (ctx.dataIndex === s.peakIdx ? 4.5 : 0),
         pointBackgroundColor: s.color, pointBorderColor: C.surface, pointBorderWidth: 2, pointHoverRadius: 5,
         fill: visible.length === 1 ? 'origin' : false,
@@ -80,8 +112,8 @@ function buildChart(cv, series, onZoom) {
             title: (items) => (ui.gran === 'day' ? fmtDate(items[0].parsed.x) : new Date(items[0].parsed.x).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })),
             label: (it) => {
               const prev = it.dataset.data[it.dataIndex - 1];
-              const d = prev ? it.parsed.y - prev.y : 0;
-              return ` ${it.dataset.label}: ${it.parsed.y}${prev ? `  (${d >= 0 ? '+' : ''}${d})` : ''}`;
+              const d = prev ? it.raw.r - prev.r : 0;
+              return ` ${it.dataset.label}: ${it.raw.r}${prev ? `  (${d >= 0 ? '+' : ''}${d})` : ''}`;
             },
             afterLabel: (it) => {
               if (ui.gran === 'day') return '';
@@ -133,6 +165,12 @@ export function ratingCard(combos, big = false) {
     series.splice(0, series.length, ...fresh);
     rebuild();
   } }, l)));
+  const smoothSeg = h('div.seg.small', { title: 'Line smoothing (hover still shows your exact rating)' }, [[0, 'Raw'], [1, 'Smooth'], [2, 'Smoother']].map(([v, l]) => h('button' + (ui.smooth === v ? '.on' : ''), { onclick: (e) => {
+    ui.smooth = v;
+    smoothSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget));
+    series.splice(0, series.length, ...seriesFrom(combos));
+    rebuild();
+  } }, l)));
   const fsBtn = big ? null : h('button.icon-btn.fs-btn', { title: 'Fullscreen', onclick: () => openFullscreen('Rating over time', () => ratingCard(combos, true)) },
     h('span', { html: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>' }));
 
@@ -147,7 +185,7 @@ export function ratingCard(combos, big = false) {
   const stats = h('div.rstats', ...statCells());
 
   const el = h('section.card.rating-card' + (big ? '.big' : ''),
-    h('header.card-head.rating-head', h('h3', 'Rating over time'), chips, h('span.spacer'), resetBtn, gran, fsBtn),
+    h('header.card-head.rating-head', h('h3', 'Rating over time'), chips, h('span.spacer'), resetBtn, smoothSeg, gran, fsBtn),
     box,
     h('div.chart-hint', ui.gran === 'game' ? 'Scroll to zoom · drag to pan · click a point to open the game' : 'Scroll to zoom · drag to pan'),
     stats);
