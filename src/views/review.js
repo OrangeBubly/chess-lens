@@ -3,7 +3,7 @@ import { Chess } from 'chess.js';
 import { S, gameById, storeAnalysis, save } from '../state.js';
 import { fmtDate, cap, siteName } from '../data.js';
 import { analyzeGame, review, winPct, LiveEngine, pvToSan } from '../engine.js';
-import { h, chart, board, empty, fmtClock, C, toast } from '../ui.js';
+import { h, chart, board, empty, fmtClock, C, toast, pickPromotion, isPromotion } from '../ui.js';
 
 const SYM = { inaccuracy: '?!', mistake: '?', blunder: '??' };
 const START = new Chess().fen();
@@ -388,9 +388,14 @@ export function reviewView() {
     runLive();
     graph?.update('none');
   }
-  function onUserMove(orig, dest) {
-    const piece = new Chess(node.fen).get(orig);
-    const promotion = piece?.type === 'p' && (dest[1] === '8' || dest[1] === '1') ? 'q' : undefined;
+  async function onUserMove(orig, dest, promo) {
+    const from = node;
+    const piece = new Chess(from.fen).get(orig);
+    let promotion;
+    if (isPromotion(piece, dest)) {
+      promotion = promo || await pickPromotion(cgEl, dest, piece.color === 'w' ? 'white' : 'black', orientation);
+      if (!promotion || node !== from) { setNode(node); return; } // cancelled, or moved elsewhere meanwhile
+    }
     const before = node.children.length;
     const n = addChild(node, { from: orig, to: dest, promotion });
     if (!n) { setNode(node); return; }
@@ -484,7 +489,7 @@ export function reviewView() {
     game: game.id, orientation, nav, flip: () => flip(), redraw,
     // Hooks for the automated self-test.
     test: {
-      play: (uci) => onUserMove(uci.slice(0, 2), uci.slice(2, 4)),
+      play: (uci) => onUserMove(uci.slice(0, 2), uci.slice(2, 4), uci[4]),
       comment: (t) => { commentBox.value = t; commentBox.dispatchEvent(new Event('input')); },
       del: () => deleteFrom(node),
       state: () => ({ key: node.key, main: node.main, nextMain: node.children[0]?.uci ?? null, lines: liveLines.map((l) => l.pv[0]), depth: liveLines[0]?.depth ?? 0,
@@ -498,7 +503,7 @@ export function reviewView() {
     renderMoves();
     cg = board(cgEl, {
       fen: node.fen, orientation,
-      movable: { free: false, color: node.ply % 2 === 0 ? 'white' : 'black', dests: destsFor(node.fen), showDests: true, events: { after: onUserMove } },
+      movable: { free: false, color: node.ply % 2 === 0 ? 'white' : 'black', dests: destsFor(node.fen), showDests: true, events: { after: (o, d) => onUserMove(o, d) } },
       premovable: { enabled: false },
     });
     setNode(node);

@@ -2,7 +2,7 @@ import { Chess } from 'chess.js';
 import { S, save, gameById } from '../state.js';
 import { fmtDate } from '../data.js';
 import { withEngine, toCp, winPct } from '../engine.js';
-import { h, card, board, empty } from '../ui.js';
+import { h, card, board, empty, pickPromotion, isPromotion } from '../ui.js';
 
 const ui = { idx: 0, kind: 'all' };
 
@@ -66,7 +66,11 @@ export function train() {
   };
   const onMove = async (orig, dest) => {
     const piece = chess.get(orig);
-    const promo = piece?.type === 'p' && (dest[1] === '8' || dest[1] === '1') ? 'q' : undefined;
+    let promo;
+    if (isPromotion(piece, dest)) {
+      promo = await pickPromotion(cgEl, dest, turn, turn);
+      if (!promo) { reset(); return; }
+    }
     const mv = chess.move({ from: orig, to: dest, promotion: promo });
     cg.set({ fen: chess.fen(), movable: { color: undefined } });
     const uci = orig + dest + (promo || '');
@@ -117,7 +121,7 @@ export function train() {
   queueMicrotask(() => {
     cg = board(cgEl, {
       fen: m.fen, orientation: turn, turnColor: turn,
-      movable: { free: false, color: turn, dests: dests(), showDests: true, events: { after: onMove } },
+      movable: { free: false, color: turn, dests: dests(), showDests: true, events: { after: (o, d) => onMove(o, d) } },
       draggable: { enabled: true }, premovable: { enabled: false },
     });
   });

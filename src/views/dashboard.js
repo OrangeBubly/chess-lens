@@ -1,8 +1,8 @@
 import { S, filtered } from '../state.js';
 import { wdl, pct, groupBy, siteName, cap, expected } from '../data.js';
-import { h, card, canvasBox, tile, wdlBar, chart, empty, C, SERIES } from '../ui.js';
+import { h, card, canvasBox, tile, wdlBar, chart, empty, C } from '../ui.js';
+import { ratingCard } from './rating.js';
 
-const fmtD = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
 
 export function dashboard() {
   const games = filtered();
@@ -20,7 +20,7 @@ export function dashboard() {
   const combos = [...groupBy(asc.filter((g) => g.myElo), (g) => g.site + '|' + g.speed)]
     .filter(([, gs]) => gs.length >= 3)
     .sort((a, b) => b[1].length - a[1].length)
-    .slice(0, 4);
+    .slice(0, 6);
 
   const tiles = h('div.tiles',
     tile('Games', games.length.toLocaleString(), `${r.win}W · ${r.draw}D · ${r.loss}L`),
@@ -34,9 +34,7 @@ export function dashboard() {
     }),
   );
 
-  // Rating chart
-  const rc = canvasBox(280);
-  const ratingCard = card('Rating over time', combos.length > 1 ? 'Each line is one site and time control' : null, rc.el);
+  const ratingEl = ratingCard(combos);
 
   // Color
   const byColor = ['white', 'black'].map((c) => [c, wdl(games.filter((g) => g.color === c))]);
@@ -100,33 +98,12 @@ export function dashboard() {
 
   const root = h('div.grid',
     tiles,
-    h('div.span-2', ratingCard),
+    h('div.span-2', ratingEl),
     colorCard, endCard, diffCard, hourCard,
     h('div.span-2', tiltCard),
   );
 
   queueMicrotask(() => {
-    chart(rc.cv, {
-      type: 'line',
-      data: {
-        datasets: combos.map(([k, gs], i) => {
-          const [site, speed] = k.split('|');
-          return { label: `${siteName(site)} ${speed}`, data: gs.map((g) => ({ x: g.ts, y: g.myElo })), borderColor: SERIES[i], backgroundColor: SERIES[i], tension: 0.15 };
-        }),
-      },
-      options: {
-        maintainAspectRatio: false, parsing: true,
-        interaction: { mode: 'nearest', intersect: false, axis: 'x' },
-        scales: {
-          x: { type: 'linear', ticks: { callback: (v) => fmtD(v), maxTicksLimit: 8 }, grid: { display: false } },
-          y: { grid: { color: C.grid } },
-        },
-        plugins: {
-          legend: { display: combos.length > 1, position: 'top', align: 'end' },
-          tooltip: { callbacks: { title: (items) => fmtD(items[0].parsed.x), label: (it) => ` ${it.dataset.label}: ${it.parsed.y}` } },
-        },
-      },
-    });
     chart(dc.cv, {
       type: 'bar',
       data: {

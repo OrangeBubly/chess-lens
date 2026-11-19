@@ -1,23 +1,71 @@
 {
   "name": "chess-lens",
   "version": "1.0.0",
-  "description": "Analyze your Lichess and Chess.com games",
+  "description": "Analyze your Lichess and Chess.com games with local Stockfish",
   "main": "main.js",
   "scripts": {
     "build": "node build.mjs",
-    "start": "node build.mjs && electron ."
+    "start": "node build.mjs && electron .",
+    "icon": "electron scripts/make-icon.js",
+    "dist": "node build.mjs && electron-builder --win"
   },
-  "author": "",
+  "author": "OrangeBubly",
   "license": "GPL-3.0-or-later",
   "dependencies": {
     "chart.js": "^4.6.1",
+    "chartjs-plugin-zoom": "^2.2.0",
     "chess.js": "^1.4.0",
     "chessground": "^9.2.1",
     "stockfish": "^17.1.0"
   },
   "devDependencies": {
     "electron": "^38.8.6",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2"
   },
-  "productName": "Chess Lens"
+  "productName": "Chess Lens",
+  "build": {
+    "appId": "com.orangebubly.chesslens",
+    "productName": "Chess Lens",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "dist/**/*",
+      "!dist/*.map",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Chess Lens",
+      "artifactName": "Chess-Lens-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Chess-Lens-${version}-portable.exe"
+    }
+  }
 }

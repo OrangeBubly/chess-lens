@@ -149,14 +149,32 @@ async function selfTest(win) {
   await js(`__S.settings.lichess='${process.env.CL_LI || ''}'; __S.settings.chesscom='${process.env.CL_CC || ''}'; __S.settings.range='3m'; go('dashboard'); __sync()`);
   console.log('sync:', await js('__S.sync.text + " / games=" + __S.games.length'));
   await shot('1-dashboard');
+  let fails = 0;
+  const check = (ok, msg) => { console.log(ok ? 'PASS' : 'FAIL', msg); if (!ok) fails++; };
+  // Rating chart: daily mode, series toggle, fullscreen
+  await js(`[...document.querySelectorAll('.rating-head .seg button')].find(b => b.textContent === 'Daily').click()`);
+  await wait(400);
+  check(await js(`document.querySelectorAll('.rstat').length > 0 && !!document.querySelector('.rating-chart canvas')`), 'rating chart renders with stats in daily mode');
+  const nChips = await js(`document.querySelectorAll('.series-chip').length`);
+  if (nChips > 1) {
+    await js(`document.querySelectorAll('.series-chip')[1].click()`); await wait(300);
+    check(await js(`document.querySelectorAll('.rstat').length === ${nChips - 1}`), 'series chip hides a series');
+    await js(`document.querySelectorAll('.series-chip')[1].click()`);
+  }
+  await win.webContents.executeJavaScript(`document.querySelector('.fs-btn').click()`, true);
+  await wait(900);
+  check(await js(`!!document.querySelector('.fs-overlay .rating-chart canvas')`), 'fullscreen overlay opens with chart');
+  console.log('  html fullscreen active:', await js('!!document.fullscreenElement'));
+  await shot('1b-rating-fullscreen');
+  await js(`document.querySelector('.fs-close').click()`); await wait(500);
+  check(await js(`!document.querySelector('.fs-overlay') && !document.fullscreenElement`), 'fullscreen closes cleanly');
+  await js(`[...document.querySelectorAll('.rating-head .seg button')].find(b => b.textContent === 'Per game').click()`);
   await js(`go('openings')`); await shot('2-openings');
   await js(`go('games')`); await shot('3-games');
   const id = await js(`__S.games.find(g => g.moves.length > 40).id`);
   await js(`__S.settings.depth = 12; go('review', { reviewId: '${id}' }); document.querySelector('.analyzing .btn')?.click()`);
   for (let i = 0; i < 240 && !(await js(`!!__S.analysis['${id}']`)); i++) await wait(500);
   await js(`go('review', { reviewId: '${id}' })`);
-  let fails = 0;
-  const check = (ok, msg) => { console.log(ok ? 'PASS' : 'FAIL', msg); if (!ok) fails++; };
   const st = () => js('__review.test.state()');
   const waitLines = async (n = 2, depth = 12) => { for (let i = 0; i < 60; i++) { const s = await st(); if (s.lines.length >= n && s.depth >= depth) return s; await wait(250); } return st(); };
   await js(`__S.notes['${id}'] = { c: {}, v: [] }; __S.settings.showEval = true; __S.settings.showEngine = true; __S.settings.multipv = 3; go('review', { reviewId: '${id}' })`);
@@ -194,6 +212,26 @@ async function selfTest(win) {
   await js(`__review.nav('back'); __review.test.del()`); await wait(300);
   s = await st();
   check(s.varLines === 0 && s.main, `deleting the line removes it (varLines=${s.varLines})`);
+  // Underpromotion through the move tree: 1.e4 d5 2.exd5 c6 3.dxc6 Nf6 4.cxb7 Nbd7 5.bxa8=N
+  await js(`__review.nav('start')`);
+  for (const u of ['e2e4', 'd7d5', 'e4d5', 'c7c6', 'd5c6', 'g8f6', 'c6b7', 'b8d7', 'b7a8n']) await js(`__review.test.play('${u}')`);
+  await wait(300);
+  s = await st();
+  check(/bxa8=N$/.test(s.key), `underpromotion to knight lands in the tree (${s.key.split(' ').slice(-1)[0]})`);
+  // Picker UI: open over the board, pick with the mouse, then with the keyboard
+  await js(`window.__pp = __pickPromotion(document.querySelector('.board-wrap.rv .cg-wrap'), 'a8', 'white', 'white'); 0`);
+  await wait(300);
+  check(await js(`document.querySelectorAll('.promo-sq').length === 4`), 'promotion picker shows 4 choices');
+  await shot('4e-promotion-picker');
+  await js(`document.querySelectorAll('.promo-sq')[2].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`);
+  check((await js('window.__pp')) === 'r', 'clicking the rook picks r');
+  await js(`window.__pp = __pickPromotion(document.querySelector('.board-wrap.rv .cg-wrap'), 'a8', 'white', 'white'); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'b' }))`);
+  check((await js('window.__pp')) === 'b', 'pressing B picks bishop');
+  await js(`window.__pp = __pickPromotion(document.querySelector('.board-wrap.rv .cg-wrap'), 'a8', 'white', 'white'); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  check((await js('window.__pp')) === null, 'Escape cancels the promotion');
+  for (let i = 0; i < 8; i++) await js(`__review.nav('back')`);
+  await js(`__review.test.del()`); await wait(200);
+  check((await st()).varLines === 0, 'promotion test line cleaned up');
   // Collapsed sidebar + smaller window
   await js(`document.querySelector('.collapse-btn').click()`);
   win.setSize(1180, 760);

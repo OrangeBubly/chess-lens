@@ -1,8 +1,9 @@
 // Small DOM, chart and board helpers.
 import { Chart, registerables } from 'chart.js';
 import { Chessground } from 'chessground';
+import zoomPlugin from 'chartjs-plugin-zoom';
 
-Chart.register(...registerables);
+Chart.register(...registerables, zoomPlugin);
 
 export const C = {
   surface: '#1a1a19', ink: '#f0efec', ink2: '#c3c2b7', muted: '#8d8c84', grid: '#2c2c2a',
@@ -43,7 +44,36 @@ const charts = new Set();
 export function chart(canvas, config) {
   const c = new Chart(canvas, config);
   charts.add(c);
+  const destroy = c.destroy.bind(c);
+  c.destroy = () => { if (charts.delete(c)) destroy(); };
   return c;
+}
+
+// Shows `build()` in a full-window overlay and asks for real fullscreen. Esc or ✕ closes.
+export function openFullscreen(title, build) {
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    document.removeEventListener('fullscreenchange', onFs);
+    document.removeEventListener('keydown', onKey, true);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    overlay.classList.add('closing');
+    setTimeout(() => {
+      for (const c of [...charts]) if (overlay.contains(c.canvas)) c.destroy();
+      overlay.remove();
+    }, 180);
+  };
+  const onFs = () => { if (!document.fullscreenElement) close(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  const overlay = h('div.fs-overlay',
+    h('div.fs-head', h('h2', title), h('span.spacer'), h('span.muted.small', 'Esc to exit'),
+      h('button.icon-btn.fs-close', { title: 'Close (Esc)', onclick: close }, '✕')),
+    h('div.fs-body', build()));
+  document.body.append(overlay);
+  document.addEventListener('keydown', onKey, true);
+  overlay.requestFullscreen?.().then(() => document.addEventListener('fullscreenchange', onFs)).catch(() => {});
+  return close;
 }
 const boards = new Set();
 export function destroyCharts() {
@@ -116,6 +146,42 @@ function makeBoard(el, cfg) {
     ...cfg,
   });
 }
+
+// Promotion chooser over the board. Resolves 'q' | 'r' | 'b' | 'n', or null if cancelled.
+export function pickPromotion(wrapEl, dest, color, orientation) {
+  return new Promise((resolve) => {
+    const file = 'abcdefgh'.indexOf(dest[0]);
+    const col = orientation === 'white' ? file : 7 - file;
+    const atTop = (dest[1] === '8') === (orientation === 'white');
+    const roles = [['queen', 'q'], ['knight', 'n'], ['rook', 'r'], ['bishop', 'b']];
+    const overlay = h('div.promo-overlay');
+    const done = (p) => {
+      overlay.classList.add('closing');
+      document.removeEventListener('keydown', onKey, true);
+      setTimeout(() => overlay.remove(), 120);
+      resolve(p);
+    };
+    const onKey = (e) => {
+      const k = e.key.toLowerCase();
+      if (k === 'escape') { e.stopPropagation(); done(null); }
+      else if ('qrbn'.includes(k) && k.length === 1) { e.stopPropagation(); done(k); }
+    };
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) done(null); });
+    roles.forEach(([role, letter], i) => {
+      const piece = document.createElement('piece');
+      piece.className = `${role} ${color}`;
+      overlay.append(h('button.promo-sq', {
+        title: `${role[0].toUpperCase() + role.slice(1)} (${letter.toUpperCase()})`,
+        style: { left: col * 12.5 + '%', top: (atTop ? i : 7 - i) * 12.5 + '%', animationDelay: i * 25 + 'ms' },
+        onmousedown: (e) => { e.stopPropagation(); done(letter); },
+      }, piece));
+    });
+    document.addEventListener('keydown', onKey, true);
+    wrapEl.append(overlay);
+  });
+}
+window.__pickPromotion = (...a) => pickPromotion(...a);
+export const isPromotion = (piece, dest) => piece?.type === 'p' && (dest[1] === '8' || dest[1] === '1');
 
 export function fmtClock(s) {
   if (s == null) return '';
